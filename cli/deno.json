@@ -1,0 +1,12 @@
+{
+  "name": "@david/gdbs",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./mod.ts",
+    "./math": "./math.ts",
+    "./runners/binary": "./runners/binary.ts"
+  },
+  "imports": {
+    "@david/which": "jsr:@david/which@^0.4.1"
+  }
+}
