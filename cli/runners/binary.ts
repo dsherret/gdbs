@@ -84,13 +84,14 @@ export class BinaryRef {
   }
 
   runOnceForDuration(options: BinaryRefRunOptions): BinaryRefResult {
+    const isBun = () => {
+      const binaryPath = this.#binaryPath.toLowerCase();
+      return binaryPath.endsWith("bun") || binaryPath.endsWith("bun.exe");
+    };
     const command = new Deno.Command(this.#binaryPath, {
       args: options.args,
-      clearEnv: true,
-      env: {
-        PATH: Deno.env.get("PATH") ?? "",
-        ...(options.env ?? {}),
-      },
+      clearEnv: isBun() ? false : true,
+      env: options.env ?? {},
       cwd: options.cwd,
       signal: options.signal,
       // by default, inherit the output so that people can
