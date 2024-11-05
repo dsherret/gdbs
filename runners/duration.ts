@@ -1,16 +1,14 @@
 import * as math from "../math.ts";
 
-export interface RunDurationBench<TBeforeEachResult> {
+export interface RunDurationBench {
   /** Number of warmup runs (default: 2) */
   warmups?: number;
   /** Number of times to run the bench. */
   times?: number;
   /** Maximum times to retry on failure (default: 2). */
   maxRetries?: number;
-  beforeEach?: () => Promise<TBeforeEachResult> | TBeforeEachResult;
   /** Run the bench returning how long it took. */
-  run: (data: TBeforeEachResult) => Promise<number> | number;
-  afterEach?: (data: TBeforeEachResult) => Promise<void> | void;
+  run: () => Promise<number> | number;
 }
 
 export interface RunDurationBenchResult {
@@ -19,22 +17,14 @@ export interface RunDurationBenchResult {
   range: [number, number];
 }
 
-export async function runDurationBench<TBeforeEachResult>(
-  options: RunDurationBench<TBeforeEachResult>,
+export async function runDurationBench(
+  options: RunDurationBench,
 ): Promise<RunDurationBenchResult> {
   async function runWithRetries() {
     let i = 0;
     while (true) {
       try {
-        let beforeEachResult: TBeforeEachResult;
-        if (options.beforeEach) {
-          beforeEachResult = await options.beforeEach();
-        }
-        const duration = options.run(beforeEachResult!);
-        if (options.afterEach) {
-          await options.afterEach(beforeEachResult!);
-        }
-        return duration;
+        return await options.run();
       } catch (err) {
         if (i === (options.maxRetries ?? 2)) {
           throw err;
