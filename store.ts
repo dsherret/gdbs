@@ -8,10 +8,21 @@ export class ResultStore {
   }
 
   set(key: string, data: object) {
-    Deno.writeTextFileSync(
-      this.#getFilePath(key),
-      JSON.stringify(data, undefined, 2) + "\n",
-    );
+    const text = JSON.stringify(data, undefined, 2) + "\n";
+    try {
+      this.#writeText(key, text);
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) {
+        Deno.mkdirSync(this.#dirPath, { recursive: true });
+        this.#writeText(key, text);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  #writeText(key: string, text: string) {
+    Deno.writeTextFileSync(this.#getFilePath(key), text);
   }
 
   get(key: string) {
@@ -39,6 +50,6 @@ export class ResultStore {
   }
 
   #getFilePath(key: string) {
-    return path.join(this.#dirPath, key);
+    return path.join(this.#dirPath, key) + ".json";
   }
 }

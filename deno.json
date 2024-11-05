@@ -4,6 +4,7 @@
   "exports": {
     ".": "./mod.ts",
     "./math": "./math.ts",
+    "./helpers/temp-dir": "./helpers/temp-dir.ts",
     "./runners/binary": "./runners/binary.ts"
   },
   "imports": {

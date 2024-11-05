@@ -15,7 +15,7 @@ export interface InitOptions<TTemplates extends TemplatesRecord> {
 }
 
 export interface BenchDefinition<TTemplate extends string> {
-  Template: TTemplate;
+  template: TTemplate;
 }
 
 export interface ReportData<TCase, TData> {
@@ -37,9 +37,10 @@ export interface BenchTemplate<
   TCase extends BaseBenchCase,
   TData,
 > {
-  collectCases(definition: TDefinition): Promise<TCase[]>;
-  run(caseItems: TCase, context: RunContext): Promise<TData>;
-  renderReport(report: ReportData<TCase, TData>): Promise<string>;
+  collectCases(definition: TDefinition): Promise<TCase[]> | TCase[];
+  systemSupportsCase?(caseItem: TCase): Promise<boolean> | boolean;
+  run(caseItems: TCase, context: RunContext): Promise<TData> | TData;
+  renderReport(report: ReportData<TCase, TData>): Promise<string> | string;
 }
 
 export function createContext<TTemplates extends TemplatesRecord>(
@@ -71,13 +72,6 @@ export class Context<
   constructor(options: InitOptions<TTemplate>) {
     this.templates = options.templates;
     this.#root = options.root ?? path.dirname(getCallerFromError(new Error()));
-
-    setTimeout(() => {
-      this.#run(Deno.args).catch((err) => {
-        console.error(err);
-        Deno.exit(1);
-      });
-    }, 0);
   }
 
   defineBench(definition: TBenchDefinitions) {
@@ -88,37 +82,36 @@ export class Context<
     });
   }
 
-  async #run(args: string[]) {
-    if (args.length === 0) {
-      for await (const caseGroup of this.#collectCases()) {
-        const resultStore = new ResultStore(
-          path.join(path.dirname(caseGroup.filePath), "__results__")
-        );
-        for (const caseItem of caseGroup.cases) {
-          if (resultStore.get(caseItem.key) != null) {
-            continue;
-          }
-          const result = await caseGroup.template.run(caseItem, {
-            cwd: path.dirname(caseGroup.filePath),
-          });
-          resultStore.set(caseItem.key, {
-            data: result,
-          });
+  async runBenchmarks() {
+    for await (const caseGroup of this.#collectCases()) {
+      const resultStore = new ResultStore(
+        path.join(path.dirname(caseGroup.filePath), "__results__")
+      );
+      for (const caseItem of caseGroup.cases) {
+        const supported = (await caseGroup.template.systemSupportsCase?.(caseItem)) ?? true;
+        if (!supported) {
+          continue;
         }
+        if (resultStore.get(caseItem.key) != null) {
+          continue;
+        }
+        const result = await caseGroup.template.run(caseItem, {
+          cwd: path.dirname(caseGroup.filePath),
+        });
+        resultStore.set(caseItem.key, {
+          data: result,
+        });
       }
-    } else {
-      throw new Error("Unknown cli arguments.");
     }
   }
 
   async *#collectCases() {
     await this.#discoverBenchFiles();
     for (const definition of this.#definitions) {
-      const Template = definition.definition.Template;
-      const template = this.templates[Template];
+      const template = this.templates[definition.definition.template];
       if (template == null) {
         throw new Error(
-          `Unknown definition Template '${Template}' (Known: ${
+          `Unknown template '${template}' (Known: ${
             Object.keys(this.templates).join(", ")
           }). Ensure you specify this when creating a context.\n    at ${definition.filePath}`,
         );
