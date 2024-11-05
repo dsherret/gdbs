@@ -7,7 +7,10 @@ export class ResultStore {
     this.#dirPath = dirPath;
   }
 
-  set(key: string, data: object) {
+  set(key: string, data: unknown) {
+    // a separate file per key is used in order to reduce the chance
+    // of merge conflicts for distinct bench results and to cause merge
+    // conflicts when two branches have the same benches
     const text = JSON.stringify(data, undefined, 2) + "\n";
     try {
       this.#writeText(key, text);

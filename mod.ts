@@ -7,7 +7,10 @@ import { getCallerFromError } from "./error.ts";
 import * as path from "@std/path";
 import { ResultStore } from "./store.ts";
 
-type TemplatesRecord = Record<string, BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown>>;
+type TemplatesRecord = Record<
+  string,
+  BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown>
+>;
 
 export interface InitOptions<TTemplates extends TemplatesRecord> {
   templates: TTemplates;
@@ -18,9 +21,8 @@ export interface BenchDefinition<TTemplate extends string> {
   template: TTemplate;
 }
 
-export interface ReportData<TCase, TData> {
-  name: string;
-  cases: { case: TCase; data: TData }[];
+export interface ReportData<TCase, TResult> {
+  cases: { caseItem: TCase; result: TResult | undefined }[];
 }
 
 export interface RunContext {
@@ -35,12 +37,11 @@ export interface BaseBenchCase {
 export interface BenchTemplate<
   TDefinition extends BenchDefinition<string>,
   TCase extends BaseBenchCase,
-  TData,
+  TResult,
 > {
   collectCases(definition: TDefinition): Promise<TCase[]> | TCase[];
   systemSupportsCase?(caseItem: TCase): Promise<boolean> | boolean;
-  run(caseItems: TCase, context: RunContext): Promise<TData> | TData;
-  renderReport(report: ReportData<TCase, TData>): Promise<string> | string;
+  run(caseItems: TCase, context: RunContext): Promise<TResult> | TResult;
 }
 
 export function createContext<TTemplates extends TemplatesRecord>(
@@ -84,9 +85,8 @@ export class Context<
 
   async runBenchmarks() {
     for await (const caseGroup of this.#collectCases()) {
-      const resultStore = new ResultStore(
-        path.join(path.dirname(caseGroup.filePath), "__results__")
-      );
+      const resultStore = new ResultStore(caseGroup.resultsDirPath);
+      console.error(`Running ${caseGroup.name}...`)
       for (const caseItem of caseGroup.cases) {
         const supported = (await caseGroup.template.systemSupportsCase?.(caseItem)) ?? true;
         if (!supported) {
@@ -98,10 +98,22 @@ export class Context<
         const result = await caseGroup.template.run(caseItem, {
           cwd: path.dirname(caseGroup.filePath),
         });
-        resultStore.set(caseItem.key, {
-          data: result,
-        });
+        resultStore.set(caseItem.key, result);
       }
+    }
+  }
+
+  async *collectBenchResults() {
+    for await (const caseGroup of this.#collectCases()) {
+      const resultStore = new ResultStore(caseGroup.resultsDirPath);
+      yield {
+        name: caseGroup.name,
+        dirPath: caseGroup.dirPath,
+        cases: caseGroup.cases.map(caseItem => ({
+          caseItem,
+          result: resultStore.get(caseItem.key),
+        }))
+      };
     }
   }
 
@@ -117,9 +129,14 @@ export class Context<
         );
       }
       const cases = await template.collectCases(definition.definition);
+      const testDirPath = path.dirname(definition.filePath);
+      const relativeTestDirPath = path.relative(this.#root, testDirPath);
       yield {
+        name: relativeTestDirPath.replace(/[\\\/]/g, "::"),
+        dirPath: testDirPath,
         ...definition,
         template,
+        resultsDirPath: path.join(testDirPath, "__results__"),
         cases,
       };
     }

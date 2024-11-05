@@ -7,7 +7,7 @@ export interface RunDurationBench {
   times?: number;
   /** Maximum times to retry on failure (default: 2). */
   maxRetries?: number;
-  /** Run the bench returning how long it took. */
+  /** Run the bench returning how long it took in milliseconds. */
   run: () => Promise<number> | number;
 }
 
