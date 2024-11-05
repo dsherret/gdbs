@@ -4,8 +4,9 @@
   "exports": {
     ".": "./mod.ts",
     "./math": "./math.ts",
+    "./helpers/binary": "./helpers/binary.ts",
     "./helpers/temp-dir": "./helpers/temp-dir.ts",
-    "./runners/binary": "./runners/binary.ts"
+    "./runners/duration": "./runners/duration.ts"
   },
   "imports": {
     "@david/which": "jsr:@david/which@^0.4.1",
