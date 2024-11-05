@@ -1,7 +1,8 @@
 import { whichSync } from "@david/which";
 import * as math from "../math.ts";
 
-export interface RunBinaryDurationBench extends BinaryRefInitOptions, BinaryRefRunOptions {
+export interface RunBinaryDurationBench
+  extends BinaryRefInitOptions, BinaryRefRunOptions {
   /** Number of warmup runs (default: 2) */
   warmups?: number;
   /** Number of times to run the bench. */
@@ -17,7 +18,9 @@ export interface RunBinaryDurationBenchResult {
   range: [number, number];
 }
 
-export async function runBinaryDurationBench(options: RunBinaryDurationBench): Promise<RunBinaryDurationBenchResult> {
+export async function runBinaryDurationBench(
+  options: RunBinaryDurationBench,
+): Promise<RunBinaryDurationBenchResult> {
   async function runWithRetries() {
     let i = 0;
     while (true) {
@@ -110,6 +113,6 @@ export class BinaryRef {
     }
     return {
       duration: endTime - startTime,
-    }
+    };
   }
 }

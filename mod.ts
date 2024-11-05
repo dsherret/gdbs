@@ -1,26 +1,26 @@
 // 1. Bench environment
 //   - This represents where a benchmark is running (ex. Linux machine, with a certain set of hardware)
 // 2. Bench definition
-// 3. Bench definition kind
+// 3. Bench template
 
 import { getCallerFromError } from "./error.ts";
 import * as path from "@std/path";
+import { ResultStore } from "./store.ts";
 
-type DefinitionKindsRecord = Record<string, BenchDefinitionKind<any, any, any>>;
+type TemplatesRecord = Record<string, BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown>>;
 
-export interface InitOptions<TDefinitionKinds extends DefinitionKindsRecord> {
-  definitionKinds: TDefinitionKinds;
+export interface InitOptions<TTemplates extends TemplatesRecord> {
+  templates: TTemplates;
   root?: string;
 }
 
-
-export interface BenchDefinition<TKind extends string> {
-  kind: TKind;
+export interface BenchDefinition<TTemplate extends string> {
+  Template: TTemplate;
 }
 
 export interface ReportData<TCase, TData> {
   name: string;
-  cases: { case: TCase, data: TData; }[];
+  cases: { case: TCase; data: TData }[];
 }
 
 export interface RunContext {
@@ -28,16 +28,23 @@ export interface RunContext {
 }
 
 export interface BaseBenchCase {
+  key: string;
   setup?(): Promise<void>;
 }
 
-export interface BenchDefinitionKind<TDefinition extends BenchDefinition<string>, TCase extends BaseBenchCase, TData> {
+export interface BenchTemplate<
+  TDefinition extends BenchDefinition<string>,
+  TCase extends BaseBenchCase,
+  TData,
+> {
   collectCases(definition: TDefinition): Promise<TCase[]>;
-  run(cases: TCase, context: RunContext): Promise<TData>;
+  run(caseItems: TCase, context: RunContext): Promise<TData>;
   renderReport(report: ReportData<TCase, TData>): Promise<string>;
 }
 
-export function createContext<TDefinitionKinds extends DefinitionKindsRecord>(options: InitOptions<TDefinitionKinds>) {
+export function createContext<TTemplates extends TemplatesRecord>(
+  options: InitOptions<TTemplates>,
+) {
   const root = options.root ?? path.dirname(getCallerFromError(new Error()));
   return new Context({
     ...options,
@@ -47,23 +54,26 @@ export function createContext<TDefinitionKinds extends DefinitionKindsRecord>(op
 
 interface BenchDefinitionWithPath<TBenchDefinition> {
   filePath: string;
-  definition: TBenchDefinition,
+  definition: TBenchDefinition;
 }
 
 export class Context<
-  TDefinitionKinds extends DefinitionKindsRecord,
-  TBenchDefinitions extends BenchDefinition<string> = TDefinitionKinds[keyof TDefinitionKinds] extends BenchDefinitionKind<infer TDef, any, any> ? TDef : never
+  TTemplate extends TemplatesRecord,
+  TBenchDefinitions extends BenchDefinition<string> =
+    TTemplate[keyof TTemplate] extends BenchTemplate<infer TDef, BaseBenchCase, unknown>
+      ? TDef
+      : never,
 > {
-  readonly #definitionKinds: TDefinitionKinds;
+  readonly templates: TTemplate;
   readonly #root: string;
   #definitions: BenchDefinitionWithPath<TBenchDefinitions>[] = [];
 
-  constructor(options: InitOptions<TDefinitionKinds>) {
-    this.#definitionKinds = options.definitionKinds;
+  constructor(options: InitOptions<TTemplate>) {
+    this.templates = options.templates;
     this.#root = options.root ?? path.dirname(getCallerFromError(new Error()));
 
     setTimeout(() => {
-      this.#run(Deno.args).catch(err => {
+      this.#run(Deno.args).catch((err) => {
         console.error(err);
         Deno.exit(1);
       });
@@ -78,40 +88,57 @@ export class Context<
     });
   }
 
-  async #run(args: string []) {
+  async #run(args: string[]) {
     if (args.length === 0) {
       for await (const caseGroup of this.#collectCases()) {
+        const resultStore = new ResultStore(
+          path.join(path.dirname(caseGroup.filePath), "__results__")
+        );
         for (const caseItem of caseGroup.cases) {
-          const result = await caseGroup.definitionKind.run(caseItem, {
+          if (resultStore.get(caseItem.key) != null) {
+            continue;
+          }
+          const result = await caseGroup.template.run(caseItem, {
             cwd: path.dirname(caseGroup.filePath),
           });
-          console.log(result);
+          resultStore.set(caseItem.key, {
+            data: result,
+          });
         }
       }
     } else {
-      throw new Error("Unknown cli arguments.")
+      throw new Error("Unknown cli arguments.");
     }
   }
 
   async *#collectCases() {
     await this.#discoverBenchFiles();
     for (const definition of this.#definitions) {
-      const kind = definition.definition.kind;
-      const definitionKind = this.#definitionKinds[kind];
-      if (definitionKind == null) {
-        throw new Error(`Unknown definition kind '${kind}' (Known: ${Object.keys(this.#definitionKinds).join(", ")}). Ensure you specify this when creating a context.\n    at ${definition.filePath}`);
+      const Template = definition.definition.Template;
+      const template = this.templates[Template];
+      if (template == null) {
+        throw new Error(
+          `Unknown definition Template '${Template}' (Known: ${
+            Object.keys(this.templates).join(", ")
+          }). Ensure you specify this when creating a context.\n    at ${definition.filePath}`,
+        );
       }
-      const cases = await definitionKind.collectCases(definition.definition);
+      const cases = await template.collectCases(definition.definition);
       yield {
         ...definition,
-        definitionKind,
+        template,
         cases,
       };
     }
   }
 
   async #discoverBenchFiles() {
-    for (const benchPath of discoverFilesInDirs(path.join(this.#root, "benches"), "__bench__.ts")) {
+    for (
+      const benchPath of discoverFilesInDirs(
+        path.join(this.#root, "benches"),
+        "__bench__.ts",
+      )
+    ) {
       await import(path.toFileUrl(benchPath).toString());
     }
     this.#definitions.sort((a, b) => a.filePath.localeCompare(b.filePath));
@@ -136,7 +163,9 @@ function* discoverFilesInDirs(root: string, fileName: string) {
     }
     if (!found) {
       if (currentPending.length === 0) {
-        throw new Error(`Couldn't find ${fileName} in directory tree of ${dir}. ${fileName} must exist in the ${dir} or any of its parents.`);
+        throw new Error(
+          `Couldn't find ${fileName} in directory tree of ${dir}. ${fileName} must exist in the ${dir} or any of its parents.`,
+        );
       }
       pending.push(...currentPending);
     }
