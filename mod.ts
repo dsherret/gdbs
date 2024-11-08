@@ -103,7 +103,15 @@ export class Context<
     }
   }
 
-  async *collectBenchResults() {
+  async *collectBenchResults(): AsyncIterable<{
+    name: string;
+    dirPath: string;
+    cases: {
+      // todo: type this...
+      caseItem: unknown,
+      result: unknown | undefined,
+    }[],
+  }> {
     for await (const caseGroup of this.#collectCases()) {
       const resultStore = new ResultStore(caseGroup.resultsDirPath);
       yield {
