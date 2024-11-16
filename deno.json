@@ -5,6 +5,8 @@
     ".": "./mod.ts",
     "./math": "./math.ts",
     "./helpers/binary": "./helpers/binary.ts",
+    "./helpers/fetch": "./helpers/fetch.ts",
+    "./helpers/github": "./helpers/github.ts",
     "./helpers/temp-dir": "./helpers/temp-dir.ts",
     "./runners/duration": "./runners/duration.ts"
   },

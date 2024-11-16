@@ -62,8 +62,8 @@ interface BenchDefinitionWithPath<TBenchDefinition> {
 export class Context<
   TTemplate extends TemplatesRecord,
   TBenchDefinitions extends BenchDefinition<string> =
-    TTemplate[keyof TTemplate] extends BenchTemplate<infer TDef, BaseBenchCase, unknown>
-      ? TDef
+    TTemplate[keyof TTemplate] extends
+      BenchTemplate<infer TDef, BaseBenchCase, unknown> ? TDef
       : never,
 > {
   readonly templates: TTemplate;
@@ -86,9 +86,10 @@ export class Context<
   async runBenchmarks() {
     for await (const caseGroup of this.#collectCases()) {
       const resultStore = new ResultStore(caseGroup.resultsDirPath);
-      console.error(`Running ${caseGroup.name}...`)
+      console.error(`Running ${caseGroup.name}...`);
       for (const caseItem of caseGroup.cases) {
-        const supported = (await caseGroup.template.systemSupportsCase?.(caseItem)) ?? true;
+        const supported =
+          (await caseGroup.template.systemSupportsCase?.(caseItem)) ?? true;
         if (!supported) {
           continue;
         }
@@ -108,19 +109,19 @@ export class Context<
     dirPath: string;
     cases: {
       // todo: type this...
-      caseItem: unknown,
-      result: unknown | undefined,
-    }[],
+      caseItem: unknown;
+      result: unknown | undefined;
+    }[];
   }> {
     for await (const caseGroup of this.#collectCases()) {
       const resultStore = new ResultStore(caseGroup.resultsDirPath);
       yield {
         name: caseGroup.name,
         dirPath: caseGroup.dirPath,
-        cases: caseGroup.cases.map(caseItem => ({
+        cases: caseGroup.cases.map((caseItem) => ({
           caseItem,
           result: resultStore.get(caseItem.key),
-        }))
+        })),
       };
     }
   }

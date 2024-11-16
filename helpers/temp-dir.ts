@@ -12,7 +12,7 @@ export class TempDir implements Disposable {
     function copyDirSync(
       from: string,
       to: string,
-      ignoredEntries: string[]
+      ignoredEntries: string[],
     ) {
       for (const entry of Deno.readDirSync(from)) {
         if (ignoredEntries.includes(entry.name)) {
@@ -20,7 +20,7 @@ export class TempDir implements Disposable {
         }
         if (entry.isDirectory) {
           const toDir = path.join(to, entry.name);
-          Deno.mkdirSync(toDir)
+          Deno.mkdirSync(toDir);
           copyDirSync(
             path.join(from, entry.name),
             toDir,
@@ -52,7 +52,7 @@ export class TempDir implements Disposable {
 
   [Symbol.dispose]() {
     Deno.removeSync(this.#path, {
-      recursive: true
+      recursive: true,
     });
   }
 }

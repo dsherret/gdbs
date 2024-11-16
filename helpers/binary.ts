@@ -1,4 +1,5 @@
 import { whichSync } from "@david/which";
+import { isAbsolute } from "@std/path/is-absolute";
 
 export interface BinaryRefInitOptions {
   binaryName: string;
@@ -26,7 +27,7 @@ export class BinaryRef {
   #binaryPath: string;
 
   constructor(options: BinaryRefInitOptions) {
-    const binaryPath = whichSync(options.binaryName);
+    const binaryPath = isAbsolute(options.binaryName) ? options.binaryName : whichSync(options.binaryName);
     if (binaryPath == null) {
       throw new Error("Could not find path for binary: " + options.binaryName);
     }
@@ -37,7 +38,9 @@ export class BinaryRef {
     return this.#binaryPath;
   }
 
-  runOnceForDuration(options: BinaryRefRunOptions): BinaryRunOnceForDurationResult {
+  runOnceForDuration(
+    options: BinaryRefRunOptions,
+  ): BinaryRunOnceForDurationResult {
     const command = new Deno.Command(this.#binaryPath, {
       args: options.args,
       clearEnv: options.clearEnv,
