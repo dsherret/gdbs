@@ -1,3 +1,4 @@
+import { withRetries } from "./_retries.ts";
 import { CacheFile } from "./cache.ts";
 
 export interface GitHubRelease {
@@ -53,7 +54,7 @@ export async function* fetchGitHubReleases(opts: FetchGitHubReleasesOptions) {
     `https://api.github.com/repos/${opts.owner}/${opts.repo}/releases`;
   let pageNumber = 1;
   while (true) {
-    const results = await fetchSingle(initialUrl + "?page=" + pageNumber, opts);
+    const results = await withRetries(() => fetchSingle(initialUrl + "?page=" + pageNumber, opts));
     if (results.length === 0) {
       return;
     }

@@ -1,4 +1,5 @@
 import {join as joinPath} from "@std/path/join";
+import { withRetries } from "./_retries.ts";
 
 export async function fetchUrlWithCache(opts: {
   url: string,
@@ -20,16 +21,18 @@ export async function fetchUrlWithCache(opts: {
   }
 
   Deno.mkdirSync(opts.folder, { recursive: true });
-  const response = await fetch(opts.url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${opts.url}: ${response.statusText}`);
-  }
-
   const tempFilePath = filePath + ".tmp";
-  {
-    using file = Deno.openSync(tempFilePath, { write: true, create: true });
-    await response.body!.pipeTo(file.writable);
-  }
+  await withRetries(async () => {
+    const response = await fetch(opts.url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${opts.url}: ${response.statusText}`);
+    }
+
+    {
+      using file = Deno.openSync(tempFilePath, { write: true, create: true });
+      await response.body!.pipeTo(file.writable);
+    }
+  });
   Deno.renameSync(tempFilePath, filePath);
   return filePath;
 }
