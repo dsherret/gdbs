@@ -8,7 +8,7 @@ export async function withRetries<T>(action: () => Promise<T>, opts: { retries?:
         throw err;
       } else {
         console.warn(`${err}\nRetrying (${i + 1}/${maxRetries})...`);
-        await new Promise(resolve => setTimeout(resolve, Math.min(5_000, i * 1000)));
+        await new Promise(resolve => setTimeout(resolve, Math.min(5_000, (i + 1) * 1000)));
       }
     }
   }

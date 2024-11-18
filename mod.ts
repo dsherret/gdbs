@@ -6,10 +6,14 @@
 import { getCallerFromError } from "./error.ts";
 import * as path from "@std/path";
 import { ResultStore } from "./store.ts";
+import * as esbuild from "esbuild";
+import { denoPlugins } from "@luca/esbuild-deno-loader";
+import CodeBlockWriter from "code-block-writer";
+import { serveDir } from "@std/http/file-server"
 
 type TemplatesRecord = Record<
   string,
-  BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown>
+  BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown, unknown>
 >;
 
 export interface InitOptions<TTemplates extends TemplatesRecord> {
@@ -22,7 +26,11 @@ export interface BenchDefinition<TTemplate extends string> {
 }
 
 export interface ReportData<TCase, TResult> {
-  cases: { caseItem: TCase; result: TResult | undefined }[];
+  cases: ReportDataCase<TCase, TResult>[];
+}
+
+export interface ReportDataCase<TCase, TResult> {
+  caseItem: TCase; result: TResult | undefined;
 }
 
 export interface RunContext {
@@ -31,17 +39,19 @@ export interface RunContext {
 
 export interface BaseBenchCase {
   key: string;
-  setup?(): Promise<void>;
 }
 
 export interface BenchTemplate<
   TDefinition extends BenchDefinition<string>,
   TCase extends BaseBenchCase,
   TResult,
+  TFrontendResult
 > {
+  frontendFilePath: string;
   collectCases(definition: TDefinition): Promise<TCase[]> | TCase[];
   systemSupportsCase?(caseItem: TCase): Promise<boolean> | boolean;
   run(caseItems: TCase, context: RunContext): Promise<TResult> | TResult;
+  mapForFrontend(reportData: ReportData<TCase, TResult>): Promise<TFrontendResult> | TFrontendResult;
 }
 
 export function createContext<TTemplates extends TemplatesRecord>(
@@ -59,11 +69,21 @@ interface BenchDefinitionWithPath<TBenchDefinition> {
   definition: TBenchDefinition;
 }
 
+type ExtractCase<TTemplate> = TTemplate[keyof TTemplate] extends
+  BenchTemplate<any, infer TCase, any, any>
+  ? TCase
+  : never;
+
+type ExtractResult<TTemplate> = TTemplate[keyof TTemplate] extends
+  BenchTemplate<any, any, infer TResult, any>
+  ? TResult
+  : never;
+
 export class Context<
   TTemplate extends TemplatesRecord,
   TBenchDefinitions extends BenchDefinition<string> =
     TTemplate[keyof TTemplate] extends
-      BenchTemplate<infer TDef, BaseBenchCase, unknown> ? TDef
+      BenchTemplate<infer TDef, BaseBenchCase, unknown, unknown> ? TDef
       : never,
 > {
   readonly templates: TTemplate;
@@ -104,24 +124,97 @@ export class Context<
     }
   }
 
+  async buildFrontend(opts: {
+    outputDir: string;
+    serve: boolean;
+  }) {
+    const websiteData = [];
+    for await (const caseGroup of this.collectBenchResults()) {
+      const template = caseGroup.template;
+      const templateName = this.#getTemplateName(template);
+      const data = template.mapForFrontend({
+        cases: caseGroup.cases,
+      });
+      websiteData.push({
+        name: caseGroup.name,
+        templateName,
+        data,
+      })
+    }
+    const outputDir = path.resolve(opts.outputDir);
+    Deno.mkdirSync(outputDir, { recursive: true });
+    Deno.writeTextFileSync(path.join(outputDir, "data.json"), JSON.stringify(websiteData));
+    const outputFilePath = path.join(outputDir, "website.ts");
+    const writer = new CodeBlockWriter();
+    writer.writeLine(`import data from "./data.json" with { type: "json" };`);
+    for (const [name, template] of Object.entries(this.templates)) {
+      writer.writeLine(`import template_${name} from "${path.relative(outputDir, template.frontendFilePath).replaceAll("\\", "/")}";`);
+    }
+    for (const name of Object.keys(this.templates)) {
+      writer.write(`const templates = `).inlineBlock(() => {
+        writer.writeLine(`"${name}": template_${name},`);
+      }).write(";").newLine();
+    }
+    writer.writeLine(`const body = document.body;`)
+    writer.write(`for (const record of data)`).block(() => {
+      writer.writeLine(`const div = document.createElement("div");`);
+      writer.writeLine(`const title = document.createElement("h2");`);
+      writer.writeLine(`title.textContent = record.name;`);
+      writer.writeLine(`div.appendChild(title)`);
+      writer.writeLine(`const template = templates[record.templateName];`);
+      writer.writeLine(`const element = template({ data: record.data });`);
+      writer.writeLine(`div.appendChild(element);`);
+      writer.writeLine(`body.appendChild(div);`);
+    });
+    Deno.writeTextFileSync(outputFilePath, writer.toString());
+    Deno.writeTextFileSync(path.join(outputDir, "index.html"), `<!DOCTYPE html><html><body><script type="module" src="./website.js"></script></body></html>`);
+    await esbuild.build({
+      plugins: [...denoPlugins()],
+      entryPoints: [path.toFileUrl(outputFilePath).toString()],
+      outfile: path.join(outputDir, "website.js"),
+      bundle: true,
+      format: "esm",
+    });
+
+    if (opts.serve) {
+      await Deno.serve((req) => serveDir(req, {
+        fsRoot: outputDir,
+      }));
+    }
+  }
+
+  #getTemplateName(template: BenchTemplate<any, any, any, any>) {
+    for (const [name, t] of Object.entries(this.templates)) {
+      if (t === template) {
+        return name;
+      }
+    }
+    throw new Error("Template not found.");
+  }
+
   async *collectBenchResults(): AsyncIterable<{
     name: string;
     dirPath: string;
-    cases: {
-      // todo: type this...
-      caseItem: unknown;
-      result: unknown | undefined;
-    }[];
+    template: BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown, unknown>;
+    cases: ReportDataCase<ExtractCase<TTemplate>, ExtractResult<TTemplate>>[];
   }> {
     for await (const caseGroup of this.#collectCases()) {
       const resultStore = new ResultStore(caseGroup.resultsDirPath);
+      const cases: ReportDataCase<ExtractCase<TTemplate>, ExtractResult<TTemplate>>[] = [];
+      for (const caseItem of caseGroup.cases) {
+        const result = resultStore.get(caseItem.key);
+        if (result != null) {
+          cases.push({
+            caseItem: caseItem as ExtractCase<TTemplate>,
+            result,
+          });
+        }
+      }
       yield {
         name: caseGroup.name,
         dirPath: caseGroup.dirPath,
-        cases: caseGroup.cases.map((caseItem) => ({
-          caseItem,
-          result: resultStore.get(caseItem.key),
-        })),
+        template: caseGroup.template,
+        cases,
       };
     }
   }

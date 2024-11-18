@@ -50,9 +50,17 @@ export class TempDir implements Disposable {
     return this.#path;
   }
 
+  cleanup() {
+    try {
+      Deno.removeSync(this.#path, {
+        recursive: true,
+      });
+    } catch (err) {
+      console.warn("Failed cleaning up temp dir", this.#path, '- Error:', err);
+    }
+  }
+
   [Symbol.dispose]() {
-    Deno.removeSync(this.#path, {
-      recursive: true,
-    });
+    this.cleanup();
   }
 }
