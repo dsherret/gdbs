@@ -1,8 +1,3 @@
-// 1. Bench environment
-//   - This represents where a benchmark is running (ex. Linux machine, with a certain set of hardware)
-// 2. Bench definition
-// 3. Bench template
-
 import { getCallerFromError } from "./error.ts";
 import * as path from "@std/path";
 import { ResultStore } from "./store.ts";
@@ -13,7 +8,7 @@ import { serveDir } from "@std/http/file-server"
 
 type TemplatesRecord = Record<
   string,
-  BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown, unknown>
+  BenchTemplate<BenchDefinition<string>, BaseBenchScenario, unknown, unknown>
 >;
 
 export interface InitOptions<TTemplates extends TemplatesRecord> {
@@ -25,33 +20,34 @@ export interface BenchDefinition<TTemplate extends string> {
   template: TTemplate;
 }
 
-export interface ReportData<TCase, TResult> {
-  cases: ReportDataCase<TCase, TResult>[];
+export interface ReportData<TScenario, TResult> {
+  scenarios: ReportDataScennarioResult<TScenario, TResult>[];
 }
 
-export interface ReportDataCase<TCase, TResult> {
-  caseItem: TCase; result: TResult | undefined;
+export interface ReportDataScennarioResult<TScenario, TResult> {
+  scenario: TScenario;
+  result: TResult | undefined;
 }
 
 export interface RunContext {
   cwd: string;
 }
 
-export interface BaseBenchCase {
+export interface BaseBenchScenario {
   key: string;
 }
 
 export interface BenchTemplate<
   TDefinition extends BenchDefinition<string>,
-  TCase extends BaseBenchCase,
+  TScenario extends BaseBenchScenario,
   TResult,
   TFrontendResult
 > {
   frontendFilePath: string;
-  collectCases(definition: TDefinition): Promise<TCase[]> | TCase[];
-  systemSupportsCase?(caseItem: TCase): Promise<boolean> | boolean;
-  run(caseItems: TCase, context: RunContext): Promise<TResult> | TResult;
-  mapForFrontend(reportData: ReportData<TCase, TResult>): Promise<TFrontendResult> | TFrontendResult;
+  collectScenarios(definition: TDefinition): Promise<TScenario[]> | TScenario[];
+  systemSupportsScenario?(scenario: TScenario): Promise<boolean> | boolean;
+  run(scenario: TScenario, context: RunContext): Promise<TResult> | TResult;
+  mapForFrontend(reportData: ReportData<TScenario, TResult>): Promise<TFrontendResult> | TFrontendResult;
 }
 
 export function createContext<TTemplates extends TemplatesRecord>(
@@ -69,9 +65,9 @@ interface BenchDefinitionWithPath<TBenchDefinition> {
   definition: TBenchDefinition;
 }
 
-type ExtractCase<TTemplate> = TTemplate[keyof TTemplate] extends
-  BenchTemplate<any, infer TCase, any, any>
-  ? TCase
+type ExtractScenario<TTemplate> = TTemplate[keyof TTemplate] extends
+  BenchTemplate<any, infer TScenario, any, any>
+  ? TScenario
   : never;
 
 type ExtractResult<TTemplate> = TTemplate[keyof TTemplate] extends
@@ -83,7 +79,7 @@ export class Context<
   TTemplate extends TemplatesRecord,
   TBenchDefinitions extends BenchDefinition<string> =
     TTemplate[keyof TTemplate] extends
-      BenchTemplate<infer TDef, BaseBenchCase, unknown, unknown> ? TDef
+      BenchTemplate<infer TDef, BaseBenchScenario, unknown, unknown> ? TDef
       : never,
 > {
   readonly templates: TTemplate;
@@ -104,22 +100,22 @@ export class Context<
   }
 
   async runBenchmarks() {
-    for await (const caseGroup of this.#collectCases()) {
-      const resultStore = new ResultStore(caseGroup.resultsDirPath);
-      console.error(`Running ${caseGroup.name}...`);
-      for (const caseItem of caseGroup.cases) {
+    for await (const scenarioGroup of this.#collectScenarioGroups()) {
+      const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
+      console.error(`Running ${scenarioGroup.name}...`);
+      for (const scenario of scenarioGroup.scenarios) {
         const supported =
-          (await caseGroup.template.systemSupportsCase?.(caseItem)) ?? true;
+          (await scenarioGroup.template.systemSupportsScenario?.(scenario)) ?? true;
         if (!supported) {
           continue;
         }
-        if (resultStore.get(caseItem.key) != null) {
+        if (resultStore.get(scenario.key) != null) {
           continue;
         }
-        const result = await caseGroup.template.run(caseItem, {
-          cwd: path.dirname(caseGroup.filePath),
+        const result = await scenarioGroup.template.run(scenario, {
+          cwd: path.dirname(scenarioGroup.filePath),
         });
-        resultStore.set(caseItem.key, result);
+        resultStore.set(scenario.key, result);
       }
     }
   }
@@ -177,15 +173,15 @@ export class Context<
     const benches = [];
     const outputDir = opts.outputDir;
     Deno.mkdirSync(outputDir, { recursive: true });
-    for await (const caseGroup of this.collectBenchResults()) {
-      const template = caseGroup.template;
+    for await (const benchResult of this.collectBenchResults()) {
+      const template = benchResult.template;
       const templateName = this.#getTemplateName(template);
       const data = template.mapForFrontend({
-        cases: caseGroup.cases,
+        scenarios: benchResult.results,
       });
       Deno.writeTextFileSync(path.join(outputDir, `data${benches.length}.json`), JSON.stringify(data));
       benches.push({
-        name: caseGroup.name,
+        name: benchResult.name,
         templateName,
       })
     }
@@ -256,31 +252,31 @@ export class Context<
   async *collectBenchResults(): AsyncIterable<{
     name: string;
     dirPath: string;
-    template: BenchTemplate<BenchDefinition<string>, BaseBenchCase, unknown, unknown>;
-    cases: ReportDataCase<ExtractCase<TTemplate>, ExtractResult<TTemplate>>[];
+    template: BenchTemplate<BenchDefinition<string>, BaseBenchScenario, unknown, unknown>;
+    results: ReportDataScennarioResult<ExtractScenario<TTemplate>, ExtractResult<TTemplate>>[];
   }> {
-    for await (const caseGroup of this.#collectCases()) {
-      const resultStore = new ResultStore(caseGroup.resultsDirPath);
-      const cases: ReportDataCase<ExtractCase<TTemplate>, ExtractResult<TTemplate>>[] = [];
-      for (const caseItem of caseGroup.cases) {
-        const result = resultStore.get(caseItem.key);
+    for await (const scenarioGroup of this.#collectScenarioGroups()) {
+      const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
+      const results: ReportDataScennarioResult<ExtractScenario<TTemplate>, ExtractResult<TTemplate>>[] = [];
+      for (const scenario of scenarioGroup.scenarios) {
+        const result = resultStore.get(scenario.key);
         if (result != null) {
-          cases.push({
-            caseItem: caseItem as ExtractCase<TTemplate>,
+          results.push({
+            scenario: scenario as ExtractScenario<TTemplate>,
             result,
           });
         }
       }
       yield {
-        name: caseGroup.name,
-        dirPath: caseGroup.dirPath,
-        template: caseGroup.template,
-        cases,
+        name: scenarioGroup.name,
+        dirPath: scenarioGroup.dirPath,
+        template: scenarioGroup.template,
+        results,
       };
     }
   }
 
-  async *#collectCases() {
+  async *#collectScenarioGroups() {
     await this.#discoverBenchFiles();
     for (const definition of this.#definitions) {
       const template = this.templates[definition.definition.template];
@@ -291,7 +287,7 @@ export class Context<
           }). Ensure you specify this when creating a context.\n    at ${definition.filePath}`,
         );
       }
-      const cases = await template.collectCases(definition.definition);
+      const scenarios = await template.collectScenarios(definition.definition);
       const testDirPath = path.dirname(definition.filePath);
       const relativeTestDirPath = path.relative(this.#root, testDirPath);
       yield {
@@ -300,7 +296,7 @@ export class Context<
         ...definition,
         template,
         resultsDirPath: path.join(testDirPath, "__results__"),
-        cases,
+        scenarios,
       };
     }
   }

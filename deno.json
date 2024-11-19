@@ -1,6 +1,13 @@
 {
   "name": "@david/gdbs",
   "version": "0.0.1",
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any"
+      ]
+    }
+  },
   "exports": {
     ".": "./mod.ts",
     "./math": "./math.ts",

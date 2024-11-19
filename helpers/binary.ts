@@ -9,7 +9,6 @@ export interface BinaryRunOnceForDurationResult {
   duration: number;
 }
 
-// todo: allow way more scenarios
 export interface BinaryRefRunOptions {
   args: string[];
   cwd: string;
