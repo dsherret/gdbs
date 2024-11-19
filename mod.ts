@@ -128,25 +128,26 @@ export class Context<
     outputDir: string;
     serve: boolean;
   }) {
-    const websiteData = [];
+    const outputDir = path.resolve(opts.outputDir);
+    const benches = [];
+    Deno.mkdirSync(outputDir, { recursive: true });
     for await (const caseGroup of this.collectBenchResults()) {
       const template = caseGroup.template;
       const templateName = this.#getTemplateName(template);
       const data = template.mapForFrontend({
         cases: caseGroup.cases,
       });
-      websiteData.push({
+      Deno.writeTextFileSync(path.join(outputDir, `data${benches.length}.json`), JSON.stringify(data));
+      benches.push({
         name: caseGroup.name,
         templateName,
-        data,
       })
     }
-    const outputDir = path.resolve(opts.outputDir);
-    Deno.mkdirSync(outputDir, { recursive: true });
-    Deno.writeTextFileSync(path.join(outputDir, "data.json"), JSON.stringify(websiteData));
+
     const outputFilePath = path.join(outputDir, "website.ts");
     const writer = new CodeBlockWriter();
-    writer.writeLine(`import data from "./data.json" with { type: "json" };`);
+    Deno.writeTextFileSync(path.join(outputDir, "benches.json"), JSON.stringify(benches));
+    writer.writeLine(`import benches from "./benches.json" with { type: "json" };`);
     for (const [name, template] of Object.entries(this.templates)) {
       writer.writeLine(`import template_${name} from "${path.relative(outputDir, template.frontendFilePath).replaceAll("\\", "/")}";`);
     }
@@ -156,14 +157,21 @@ export class Context<
       }).write(";").newLine();
     }
     writer.writeLine(`const body = document.body;`)
-    writer.write(`for (const record of data)`).block(() => {
+    writer.write(`for (let i = 0; i < benches.length; i++)`).block(() => {
+      writer.writeLine(`const bench = benches[i];`);
       writer.writeLine(`const div = document.createElement("div");`);
       writer.writeLine(`const title = document.createElement("h2");`);
-      writer.writeLine(`title.textContent = record.name;`);
+      writer.writeLine(`title.textContent = bench.name;`);
       writer.writeLine(`div.appendChild(title)`);
-      writer.writeLine(`const template = templates[record.templateName];`);
-      writer.writeLine(`const element = template({ data: record.data });`);
-      writer.writeLine(`div.appendChild(element);`);
+      writer.writeLine(`const template = templates[bench.templateName];`);
+      writer.writeLine(`fetch("./data" + i + ".json").then(res => res.json()).then(data => `).inlineBlock(() => {
+        writer.writeLine(`const element = template({ data });`);
+        writer.writeLine(`div.appendChild(element);`);
+      }).write(").catch(err => ").inlineBlock(() => {
+        writer.writeLine(`const error = document.createElement("p");`);
+        writer.writeLine(`error.textContent = String(err);`);
+        writer.writeLine(`div.appendChild(error);`);
+      }).write(");").newLine();
       writer.writeLine(`body.appendChild(div);`);
     });
     Deno.writeTextFileSync(outputFilePath, writer.toString());
