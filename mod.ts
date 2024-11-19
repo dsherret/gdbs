@@ -126,10 +126,56 @@ export class Context<
 
   async buildFrontend(opts: {
     outputDir: string;
-    serve: boolean;
+    dev: boolean;
   }) {
-    const outputDir = path.resolve(opts.outputDir);
+    opts.outputDir = path.resolve(opts.outputDir);
+    if (opts.dev) {
+      let socket: WebSocket | undefined;
+      const server = Deno.serve((req) => {
+        if (req.headers.get("upgrade") === "websocket") {
+          const details = Deno.upgradeWebSocket(req);
+          socket = details.socket;
+          return details.response;
+        }
+        return serveDir(req, {
+          fsRoot: opts.outputDir,
+        })
+      });
+      while (true) {
+        console.error("Building...");
+        await this.#build({
+          outputDir: opts.outputDir,
+          devPort: server.addr.port,
+        });
+        if (socket != null) {
+          socket.send("reload");
+          socket = undefined;
+        }
+        using watcher = Deno.watchFs(this.#root, { recursive: true });
+        const iterator = watcher[Symbol.asyncIterator]();
+        while (true) {
+          const event = await iterator.next();
+          // ignore events in the output directory
+          const value = event.value as Deno.FsEvent;
+          if (!value.paths.every((p) => p.startsWith(opts.outputDir))) {
+            break;
+          }
+        }
+      }
+    } else {
+      await this.#build({
+        outputDir: opts.outputDir,
+        devPort: undefined,
+      });
+    }
+  }
+
+  async #build(opts: {
+    outputDir: string;
+    devPort: number | undefined;
+  }) {
     const benches = [];
+    const outputDir = opts.outputDir;
     Deno.mkdirSync(outputDir, { recursive: true });
     for await (const caseGroup of this.collectBenchResults()) {
       const template = caseGroup.template;
@@ -174,6 +220,19 @@ export class Context<
       }).write(");").newLine();
       writer.writeLine(`body.appendChild(div);`);
     });
+    if (opts.devPort != null) {
+      writer.writeLine(`const ws = new WebSocket("ws://localhost:${opts.devPort}");`);
+      writer.writeLine(`ws.onmessage = () => location.reload();`);
+      writer.write(`ws.onclose = async () => `).inlineBlock(() => {
+        // check for when the server is back online
+        writer.write("while (true)").block(() => {
+          writer.writeLine("await new Promise((resolve) => setTimeout(resolve, 1_000));");
+          writer.write(`await fetch("http://localhost:${opts.devPort}/", { signal: AbortSignal.timeout(1000) }).then(() => `).inlineBlock(() => {
+            writer.writeLine("location.reload();");
+          }).write(").catch(() => {});");
+        });
+      }).write(";").newLine();
+    }
     Deno.writeTextFileSync(outputFilePath, writer.toString());
     Deno.writeTextFileSync(path.join(outputDir, "index.html"), `<!DOCTYPE html><html><body><script type="module" src="./website.js"></script></body></html>`);
     await esbuild.build({
@@ -183,12 +242,6 @@ export class Context<
       bundle: true,
       format: "esm",
     });
-
-    if (opts.serve) {
-      await Deno.serve((req) => serveDir(req, {
-        fsRoot: outputDir,
-      }));
-    }
   }
 
   #getTemplateName(template: BenchTemplate<any, any, any, any>) {
