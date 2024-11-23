@@ -148,6 +148,7 @@ export class Context<
           socket = undefined;
         }
         using watcher = Deno.watchFs(this.#root, { recursive: true });
+        console.error("Watching...");
         const iterator = watcher[Symbol.asyncIterator]();
         while (true) {
           const event = await iterator.next();
@@ -315,15 +316,17 @@ export class Context<
 }
 
 function* discoverFilesInDirs(root: string, fileName: string) {
-  const pending = [root];
-  while (pending.length > 0) {
-    const dir = pending.pop()!;
-    const subDirs = Deno.readDirSync(dir);
-    const currentPending = [];
+  const pendingDirs = [root];
+  while (pendingDirs.length > 0) {
+    const dir = pendingDirs.pop()!;
+    const childEntries = Deno.readDirSync(dir);
+    const currentPendingDirs = [];
     let found = false;
-    for (const entry of subDirs) {
+    let hadChildEntry = false;
+    for (const entry of childEntries) {
+      hadChildEntry = true;
       if (entry.isDirectory) {
-        currentPending.push(`${dir}/${entry.name}`);
+        currentPendingDirs.push(`${dir}/${entry.name}`);
       } else if (entry.isFile && entry.name === fileName) {
         yield `${dir}/${entry.name}`;
         found = true;
@@ -331,12 +334,12 @@ function* discoverFilesInDirs(root: string, fileName: string) {
       }
     }
     if (!found) {
-      if (currentPending.length === 0) {
+      if (currentPendingDirs.length === 0 && hadChildEntry) {
         throw new Error(
-          `Couldn't find ${fileName} in directory tree of ${dir}. ${fileName} must exist in the ${dir} or any of its parents.`,
+          `Couldn't find ${fileName} in directory tree of ${dir}. ${fileName} must exist in ${dir} or any of its ancestor directories.`,
         );
       }
-      pending.push(...currentPending);
+      pendingDirs.push(...currentPendingDirs);
     }
   }
 }

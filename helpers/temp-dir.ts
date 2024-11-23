@@ -1,4 +1,3 @@
-// import {} from "@std/fs";
 import * as path from "@std/path";
 
 export class TempDir implements Disposable {
@@ -56,7 +55,9 @@ export class TempDir implements Disposable {
         recursive: true,
       });
     } catch (err) {
-      console.warn("Failed cleaning up temp dir", this.#path, '- Error:', err);
+      if (!(err instanceof Deno.errors.NotFound)) {
+        console.warn("Failed cleaning up temp dir", this.#path, '- Error:', err);
+      }
     }
   }
 
