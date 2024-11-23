@@ -16,7 +16,7 @@ export class ResultStore {
       this.#writeText(key, text);
     } catch (err) {
       if (err instanceof Deno.errors.NotFound) {
-        Deno.mkdirSync(this.#dirPath, { recursive: true });
+        Deno.mkdirSync(path.dirname(this.#getFilePath(key)), { recursive: true });
         this.#writeText(key, text);
       } else {
         throw err;
