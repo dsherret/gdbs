@@ -9,7 +9,7 @@ export interface BinaryRunOnceForDurationResult {
   duration: number;
 }
 
-export interface BinaryRefRunOptions {
+export interface BinaryRefRunOnceForDurationOptions {
   args: string[];
   cwd: string;
   clearEnv?: boolean;
@@ -37,8 +37,32 @@ export class BinaryRef {
     return this.#binaryPath;
   }
 
+  runGetOutput(options: {
+    args: string[];
+    cwd: string;
+    clearEnv?: boolean;
+    env?: Record<string, string>;
+    signal?: AbortSignal;
+  }) {
+    const command = new Deno.Command(this.#binaryPath, {
+      args: options.args,
+      clearEnv: options.clearEnv,
+      env: options.env ?? {},
+      cwd: options.cwd,
+      signal: options.signal,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "inherit",
+    });
+    const output = command.outputSync();
+    if (output.code !== 0) {
+      throw new Error("Unexpected exit code. Must be 0, was " + output.code);
+    }
+    return new TextDecoder().decode(output.stdout);
+  }
+
   runOnceForDuration(
-    options: BinaryRefRunOptions,
+    options: BinaryRefRunOnceForDurationOptions,
   ): BinaryRunOnceForDurationResult {
     const command = new Deno.Command(this.#binaryPath, {
       args: options.args,
@@ -46,6 +70,7 @@ export class BinaryRef {
       env: options.env ?? {},
       cwd: options.cwd,
       signal: options.signal,
+      stdin: "null",
       // by default, inherit the output so that people can
       // easily see what's going on when something fails
       stdout: options.stdout ?? "inherit",
