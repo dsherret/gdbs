@@ -194,11 +194,11 @@ export class Context<
     for (const [name, template] of Object.entries(this.templates)) {
       writer.writeLine(`import template_${name} from "${path.relative(outputDir, template.frontendFilePath).replaceAll("\\", "/")}";`);
     }
-    for (const name of Object.keys(this.templates)) {
-      writer.write(`const templates = `).inlineBlock(() => {
-        writer.writeLine(`"${name}": template_${name},`);
-      }).write(";").newLine();
-    }
+    writer.write(`const templates = `).inlineBlock(() => {
+      for (const name of Object.keys(this.templates)) {
+          writer.writeLine(`"${name}": template_${name},`);
+      }
+    }).write(";").newLine();
     writer.writeLine(`const body = document.body;`)
     writer.write(`for (let i = 0; i < benches.length; i++)`).block(() => {
       writer.writeLine(`const bench = benches[i];`);
