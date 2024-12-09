@@ -46,7 +46,7 @@ export interface BenchTemplate<
   frontendFilePath: string;
   collectScenarios(definition: TDefinition): Promise<TScenario[]> | TScenario[];
   systemSupportsScenario?(scenario: TScenario): Promise<boolean> | boolean;
-  run(scenario: TScenario, context: RunContext): Promise<TResult> | TResult;
+  runBenchScenarios(scenario: TScenario[], context: RunContext): Promise<TResult[]> | TResult[];
   mapForFrontend(reportData: ReportData<TScenario, TResult>): Promise<TFrontendResult> | TFrontendResult;
 }
 
@@ -103,6 +103,7 @@ export class Context<
     for await (const scenarioGroup of this.#collectScenarioGroups()) {
       const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
       console.error(`Running ${scenarioGroup.name}...`);
+      const scenariosToRun: BaseBenchScenario[] = [];
       for (const scenario of scenarioGroup.scenarios) {
         const supported =
           (await scenarioGroup.template.systemSupportsScenario?.(scenario)) ?? true;
@@ -112,10 +113,18 @@ export class Context<
         if (resultStore.get(scenario.key) != null) {
           continue;
         }
-        const result = await scenarioGroup.template.run(scenario, {
+        scenariosToRun.push(scenario);
+      }
+      if (scenariosToRun.length > 0) {
+        const results = await scenarioGroup.template.runBenchScenarios(scenariosToRun, {
           cwd: path.dirname(scenarioGroup.filePath),
         });
-        resultStore.set(scenario.key, result);
+        if (results.length !== scenariosToRun.length) {
+          throw new Error(`Results length (${results.length}) doesn't match provided scenarios length (${scenariosToRun.length}).`);
+        }
+        for (let i = 0; i < scenariosToRun.length; i++) {
+          resultStore.set(scenariosToRun[i].key, results[i]);
+        }
       }
     }
   }

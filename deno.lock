@@ -13,6 +13,7 @@
     "jsr:@std/internal@^1.0.5": "1.0.5",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.4": "1.0.4",
+    "jsr:@std/path@*": "1.0.8",
     "jsr:@std/path@^1.0.6": "1.0.8",
     "jsr:@std/path@^1.0.7": "1.0.8",
     "jsr:@std/path@^1.0.8": "1.0.8",
@@ -184,10 +185,14 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@david/code-block-writer@13",
       "jsr:@david/which@~0.4.1",
+      "jsr:@luca/esbuild-deno-loader@0.11",
       "jsr:@std/assert@^1.0.7",
       "jsr:@std/fs@^1.0.5",
-      "jsr:@std/path@^1.0.8"
+      "jsr:@std/http@^1.0.10",
+      "jsr:@std/path@^1.0.8",
+      "npm:esbuild@0.20.2"
     ]
   }
 }
