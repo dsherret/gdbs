@@ -5,7 +5,7 @@ export async function fetchUrlWithCache(opts: {
   url: string;
   folder: Path;
   tempFileSuffix?: string;
-}) {
+}): Promise<Path> {
   const fileName = await hash(opts.url) + (opts.tempFileSuffix ?? "");
   const filePath = opts.folder.join(fileName);
 

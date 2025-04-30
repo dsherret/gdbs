@@ -30,7 +30,7 @@ export interface FetchGitHubReleasesOptionsWithCache
 
 export async function fetchGitHubReleasesWithCache(
   opts: FetchGitHubReleasesOptionsWithCache,
-) {
+): Promise<ReadonlyArray<GitHubRelease>> {
   const cacheFile = new CacheFile<GitHubRelease[]>({
     cacheFilePath: opts.cacheFilePath,
     cacheInvalidateTime: Date.now() - opts.cacheDurationMs,
@@ -50,7 +50,7 @@ export interface FetchGitHubReleasesOptions {
   authToken?: string;
 }
 
-export async function* fetchGitHubReleases(opts: FetchGitHubReleasesOptions) {
+export async function* fetchGitHubReleases(opts: FetchGitHubReleasesOptions): AsyncGenerator<GitHubRelease> {
   const initialUrl =
     `https://api.github.com/repos/${opts.owner}/${opts.repo}/releases`;
   let pageNumber = 1;

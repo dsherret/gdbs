@@ -36,7 +36,7 @@ export class BinaryRef {
     this.#binaryPath = new Path(binaryPath);
   }
 
-  get binaryPath() {
+  get binaryPath(): Path {
     return this.#binaryPath;
   }
 
@@ -46,7 +46,7 @@ export class BinaryRef {
     clearEnv?: boolean;
     env?: Record<string, string>;
     signal?: AbortSignal;
-  }) {
+  }): string {
     const command = new Deno.Command(this.#binaryPath.toString(), {
       args: options.args,
       clearEnv: options.clearEnv,

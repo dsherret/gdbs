@@ -8,7 +8,7 @@ export class TempDir implements Disposable {
     this.#inner = createTempDirSync(opts);
   }
 
-  static fromBenchDir(existingDir: Path) {
+  static fromBenchDir(existingDir: Path): TempDir {
     function copyDirSync(
       from: Path,
       to: Path,
@@ -43,7 +43,7 @@ export class TempDir implements Disposable {
     return tempDir;
   }
 
-  get path() {
+  get path(): Path {
     return this.#inner.path;
   }
 

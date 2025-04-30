@@ -57,7 +57,7 @@ export interface BenchTemplate<
 
 export function createContext<TTemplates extends TemplatesRecord>(
   options: InitOptions<TTemplates>,
-) {
+): Context<TTemplates> {
   const root = options.root ?? getCallerFromError(new Error()).parentOrThrow();
   return new Context({
     ...options,
