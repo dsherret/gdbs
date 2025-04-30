@@ -43,7 +43,7 @@ export interface BenchTemplate<
   TResult,
   TFrontendResult,
 > {
-  frontendFilePath: string;
+  frontendFilePath: Path;
   collectScenarios(definition: TDefinition): Promise<TScenario[]> | TScenario[];
   systemSupportsScenario?(scenario: TScenario): Promise<boolean> | boolean;
   runBenchScenarios(
@@ -240,7 +240,8 @@ export class Context<
       writer.writeLine(`const title = document.createElement("h2");`);
       writer.writeLine(`title.textContent = bench.name;`);
       writer.writeLine(`div.appendChild(title)`);
-      writer.writeLine(`const template = templates[bench.templateName];`);
+      writer.writeLine(`const templateName = bench.templateName as keyof typeof templates;`);
+      writer.writeLine(`const template = templates[templateName];`);
       writer.writeLine(
         `fetch("./data" + i + ".json").then(res => res.json()).then(data => `,
       ).inlineBlock(() => {

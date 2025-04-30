@@ -12,7 +12,7 @@ export interface BinaryRunOnceForDurationResult {
 
 export interface BinaryRefRunOnceForDurationOptions {
   args: string[];
-  cwd: string;
+  cwd: Path;
   clearEnv?: boolean;
   env?: Record<string, string>;
   signal?: AbortSignal;
@@ -42,7 +42,7 @@ export class BinaryRef {
 
   runGetOutput(options: {
     args: string[];
-    cwd: string;
+    cwd: Path;
     clearEnv?: boolean;
     env?: Record<string, string>;
     signal?: AbortSignal;
@@ -51,7 +51,7 @@ export class BinaryRef {
       args: options.args,
       clearEnv: options.clearEnv,
       env: options.env ?? {},
-      cwd: options.cwd,
+      cwd: options.cwd.toString(),
       signal: options.signal,
       stdin: "null",
       stdout: "piped",
@@ -71,7 +71,7 @@ export class BinaryRef {
       args: options.args,
       clearEnv: options.clearEnv,
       env: options.env ?? {},
-      cwd: options.cwd,
+      cwd: options.cwd.toString(),
       signal: options.signal,
       stdin: "null",
       // by default, inherit the output so that people can
