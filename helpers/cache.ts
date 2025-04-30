@@ -1,4 +1,4 @@
-import { dirname } from "@std/path/dirname";
+import type { Path } from "@david/path";
 
 export interface CacheFileData<T> {
   saveTime: number;
@@ -6,10 +6,12 @@ export interface CacheFileData<T> {
 }
 
 export class CacheFile<T> {
-  readonly #cacheFilePath: string;
-  readonly #cacheInvalidateTime: number| undefined;
+  readonly #cacheFilePath: Path;
+  readonly #cacheInvalidateTime: number | undefined;
 
-  constructor(opts: { cacheFilePath: string; cacheInvalidateTime: number | undefined }) {
+  constructor(
+    opts: { cacheFilePath: Path; cacheInvalidateTime: number | undefined },
+  ) {
     this.#cacheFilePath = opts.cacheFilePath;
     this.#cacheInvalidateTime = opts.cacheInvalidateTime;
   }
@@ -17,9 +19,12 @@ export class CacheFile<T> {
   tryRead(): T | undefined {
     try {
       const content = JSON.parse(
-        Deno.readTextFileSync(this.#cacheFilePath),
+        this.#cacheFilePath.readTextSync(),
       ) as CacheFileData<T>;
-      if (this.#cacheInvalidateTime != null && content.saveTime < this.#cacheInvalidateTime) {
+      if (
+        this.#cacheInvalidateTime != null
+        && content.saveTime < this.#cacheInvalidateTime
+      ) {
         return undefined;
       }
       return content.data;
@@ -36,9 +41,9 @@ export class CacheFile<T> {
       saveTime: Date.now(),
       data,
     };
-    Deno.mkdirSync(dirname(this.#cacheFilePath), { recursive: true });
-    const tempPath = this.#cacheFilePath + ".tmp";
-    Deno.writeTextFileSync(tempPath, JSON.stringify(content));
-    Deno.renameSync(tempPath, this.#cacheFilePath);
+    this.#cacheFilePath.parentOrThrow().mkdirSync({ recursive: true });
+    const tempPath = this.#cacheFilePath.withExtname(".tmp");
+    tempPath.writeTextSync(JSON.stringify(content));
+    tempPath.renameSync(this.#cacheFilePath);
   }
 }

@@ -1,3 +1,4 @@
+import type { Path } from "@david/path";
 import { withRetries } from "./_retries.ts";
 import { CacheFile } from "./cache.ts";
 
@@ -22,7 +23,7 @@ export interface GitHubReleaseAsset {
 export interface FetchGitHubReleasesOptionsWithCache
   extends FetchGitHubReleasesOptions {
   /** File path to store the cache at. */
-  cacheFilePath: string;
+  cacheFilePath: Path;
   /** Number of milliseconds for the cache to be valid. */
   cacheDurationMs: number;
 }
@@ -54,7 +55,9 @@ export async function* fetchGitHubReleases(opts: FetchGitHubReleasesOptions) {
     `https://api.github.com/repos/${opts.owner}/${opts.repo}/releases`;
   let pageNumber = 1;
   while (true) {
-    const results = await withRetries(() => fetchSingle(initialUrl + "?page=" + pageNumber, opts));
+    const results = await withRetries(() =>
+      fetchSingle(initialUrl + "?page=" + pageNumber, opts)
+    );
     if (results.length === 0) {
       return;
     }

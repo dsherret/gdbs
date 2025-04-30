@@ -1,10 +1,10 @@
 import { getCallerFromError } from "./error.ts";
-import * as path from "@std/path";
 import { ResultStore } from "./store.ts";
 import * as esbuild from "esbuild";
 import { denoPlugins } from "@luca/esbuild-deno-loader";
 import CodeBlockWriter from "code-block-writer";
-import { serveDir } from "@std/http/file-server"
+import { serveDir } from "@std/http/file-server";
+import type { Path } from "@david/path";
 
 type TemplatesRecord = Record<
   string,
@@ -13,7 +13,7 @@ type TemplatesRecord = Record<
 
 export interface InitOptions<TTemplates extends TemplatesRecord> {
   templates: TTemplates;
-  root?: string;
+  root?: Path;
 }
 
 export interface BenchDefinition<TTemplate extends string> {
@@ -30,7 +30,7 @@ export interface ReportDataScennarioResult<TScenario, TResult> {
 }
 
 export interface RunContext {
-  cwd: string;
+  cwd: Path;
 }
 
 export interface BaseBenchScenario {
@@ -41,19 +41,24 @@ export interface BenchTemplate<
   TDefinition extends BenchDefinition<string>,
   TScenario extends BaseBenchScenario,
   TResult,
-  TFrontendResult
+  TFrontendResult,
 > {
   frontendFilePath: string;
   collectScenarios(definition: TDefinition): Promise<TScenario[]> | TScenario[];
   systemSupportsScenario?(scenario: TScenario): Promise<boolean> | boolean;
-  runBenchScenarios(scenario: TScenario[], context: RunContext): Promise<TResult[]> | TResult[];
-  mapForFrontend(reportData: ReportData<TScenario, TResult>): Promise<TFrontendResult> | TFrontendResult;
+  runBenchScenarios(
+    scenario: TScenario[],
+    context: RunContext,
+  ): Promise<TResult[]> | TResult[];
+  mapForFrontend(
+    reportData: ReportData<TScenario, TResult>,
+  ): Promise<TFrontendResult> | TFrontendResult;
 }
 
 export function createContext<TTemplates extends TemplatesRecord>(
   options: InitOptions<TTemplates>,
 ) {
-  const root = options.root ?? path.dirname(getCallerFromError(new Error()));
+  const root = options.root ?? getCallerFromError(new Error()).parentOrThrow();
   return new Context({
     ...options,
     root,
@@ -61,18 +66,16 @@ export function createContext<TTemplates extends TemplatesRecord>(
 }
 
 interface BenchDefinitionWithPath<TBenchDefinition> {
-  filePath: string;
+  filePath: Path;
   definition: TBenchDefinition;
 }
 
 type ExtractScenario<TTemplate> = TTemplate[keyof TTemplate] extends
-  BenchTemplate<any, infer TScenario, any, any>
-  ? TScenario
+  BenchTemplate<any, infer TScenario, any, any> ? TScenario
   : never;
 
 type ExtractResult<TTemplate> = TTemplate[keyof TTemplate] extends
-  BenchTemplate<any, any, infer TResult, any>
-  ? TResult
+  BenchTemplate<any, any, infer TResult, any> ? TResult
   : never;
 
 export class Context<
@@ -83,12 +86,13 @@ export class Context<
       : never,
 > {
   readonly templates: TTemplate;
-  readonly #root: string;
+  readonly #root: Path;
   #definitions: BenchDefinitionWithPath<TBenchDefinitions>[] = [];
 
   constructor(options: InitOptions<TTemplate>) {
     this.templates = options.templates;
-    this.#root = options.root ?? path.dirname(getCallerFromError(new Error()));
+    this.#root = options.root
+      ?? getCallerFromError(new Error()).parentOrThrow();
   }
 
   defineBench(definition: TBenchDefinitions) {
@@ -106,7 +110,8 @@ export class Context<
       const scenariosToRun: BaseBenchScenario[] = [];
       for (const scenario of scenarioGroup.scenarios) {
         const supported =
-          (await scenarioGroup.template.systemSupportsScenario?.(scenario)) ?? true;
+          (await scenarioGroup.template.systemSupportsScenario?.(scenario))
+            ?? true;
         if (!supported) {
           continue;
         }
@@ -116,11 +121,16 @@ export class Context<
         scenariosToRun.push(scenario);
       }
       if (scenariosToRun.length > 0) {
-        const results = await scenarioGroup.template.runBenchScenarios(scenariosToRun, {
-          cwd: path.dirname(scenarioGroup.filePath),
-        });
+        const results = await scenarioGroup.template.runBenchScenarios(
+          scenariosToRun,
+          {
+            cwd: scenarioGroup.filePath.parentOrThrow(),
+          },
+        );
         if (results.length !== scenariosToRun.length) {
-          throw new Error(`Results length (${results.length}) doesn't match provided scenarios length (${scenariosToRun.length}).`);
+          throw new Error(
+            `Results length (${results.length}) doesn't match provided scenarios length (${scenariosToRun.length}).`,
+          );
         }
         for (let i = 0; i < scenariosToRun.length; i++) {
           resultStore.set(scenariosToRun[i].key, results[i]);
@@ -130,10 +140,10 @@ export class Context<
   }
 
   async buildFrontend(opts: {
-    outputDir: string;
+    outputDir: Path;
     dev: boolean;
   }) {
-    opts.outputDir = path.resolve(opts.outputDir);
+    opts.outputDir = opts.outputDir.resolve();
     if (opts.dev) {
       let socket: WebSocket | undefined;
       const server = Deno.serve((req) => {
@@ -143,8 +153,8 @@ export class Context<
           return details.response;
         }
         return serveDir(req, {
-          fsRoot: opts.outputDir,
-        })
+          fsRoot: opts.outputDir.toString(),
+        });
       });
       while (true) {
         console.error("Building...");
@@ -156,14 +166,18 @@ export class Context<
           socket.send("reload");
           socket = undefined;
         }
-        using watcher = Deno.watchFs(this.#root, { recursive: true });
+        using watcher = Deno.watchFs(this.#root.toString(), {
+          recursive: true,
+        });
         console.error("Watching...");
         const iterator = watcher[Symbol.asyncIterator]();
         while (true) {
           const event = await iterator.next();
           // ignore events in the output directory
           const value = event.value as Deno.FsEvent;
-          if (!value.paths.every((p) => p.startsWith(opts.outputDir))) {
+          if (
+            !value.paths.every((p) => p.startsWith(opts.outputDir.toString()))
+          ) {
             break;
           }
         }
@@ -177,39 +191,49 @@ export class Context<
   }
 
   async #build(opts: {
-    outputDir: string;
+    outputDir: Path;
     devPort: number | undefined;
   }) {
     const benches = [];
     const outputDir = opts.outputDir;
-    Deno.mkdirSync(outputDir, { recursive: true });
+    outputDir.mkdirSync({ recursive: true });
     for await (const benchResult of this.collectBenchResults()) {
       const template = benchResult.template;
       const templateName = this.#getTemplateName(template);
       const data = template.mapForFrontend({
         scenarios: benchResult.results,
       });
-      Deno.writeTextFileSync(path.join(outputDir, `data${benches.length}.json`), JSON.stringify(data));
+      outputDir.join(`data${benches.length}.json`)
+        .writeTextSync(JSON.stringify(data));
       benches.push({
         name: benchResult.name,
         templateName,
-      })
+      });
     }
 
-    Deno.writeTextFileSync(path.join(outputDir, "benches.json"), JSON.stringify(benches));
+    outputDir.join("benches.json").writeTextSync(
+      JSON.stringify(benches),
+    );
 
-    const outputFilePath = path.join(outputDir, "website.ts");
+    const outputFilePath = outputDir.join("website.ts");
     const writer = new CodeBlockWriter();
-    writer.writeLine(`import benches from "./benches.json" with { type: "json" };`);
+    writer.writeLine(
+      `import benches from "./benches.json" with { type: "json" };`,
+    );
     for (const [name, template] of Object.entries(this.templates)) {
-      writer.writeLine(`import template_${name} from "${path.relative(outputDir, template.frontendFilePath).replaceAll("\\", "/")}";`);
+      writer.writeLine(
+        `import template_${name} from "${
+          outputDir.relative(template.frontendFilePath)
+            .replaceAll("\\", "/")
+        }";`,
+      );
     }
     writer.write(`const templates = `).inlineBlock(() => {
       for (const name of Object.keys(this.templates)) {
-          writer.writeLine(`"${name}": template_${name},`);
+        writer.writeLine(`"${name}": template_${name},`);
       }
     }).write(";").newLine();
-    writer.writeLine(`const body = document.body;`)
+    writer.writeLine(`const body = document.body;`);
     writer.write(`for (let i = 0; i < benches.length; i++)`).block(() => {
       writer.writeLine(`const bench = benches[i];`);
       writer.writeLine(`const div = document.createElement("div");`);
@@ -217,7 +241,9 @@ export class Context<
       writer.writeLine(`title.textContent = bench.name;`);
       writer.writeLine(`div.appendChild(title)`);
       writer.writeLine(`const template = templates[bench.templateName];`);
-      writer.writeLine(`fetch("./data" + i + ".json").then(res => res.json()).then(data => `).inlineBlock(() => {
+      writer.writeLine(
+        `fetch("./data" + i + ".json").then(res => res.json()).then(data => `,
+      ).inlineBlock(() => {
         writer.writeLine(`const element = template({ data });`);
         writer.writeLine(`div.appendChild(element);`);
       }).write(").catch(err => ").inlineBlock(() => {
@@ -228,24 +254,32 @@ export class Context<
       writer.writeLine(`body.appendChild(div);`);
     });
     if (opts.devPort != null) {
-      writer.writeLine(`const ws = new WebSocket("ws://localhost:${opts.devPort}");`);
+      writer.writeLine(
+        `const ws = new WebSocket("ws://localhost:${opts.devPort}");`,
+      );
       writer.writeLine(`ws.onmessage = () => location.reload();`);
       writer.write(`ws.onclose = async () => `).inlineBlock(() => {
         // check for when the server is back online
         writer.write("while (true)").block(() => {
-          writer.writeLine("await new Promise((resolve) => setTimeout(resolve, 1_000));");
-          writer.write(`await fetch("http://localhost:${opts.devPort}/", { signal: AbortSignal.timeout(1000) }).then(() => `).inlineBlock(() => {
+          writer.writeLine(
+            "await new Promise((resolve) => setTimeout(resolve, 1_000));",
+          );
+          writer.write(
+            `await fetch("http://localhost:${opts.devPort}/", { signal: AbortSignal.timeout(1000) }).then(() => `,
+          ).inlineBlock(() => {
             writer.writeLine("location.reload();");
           }).write(").catch(() => {});");
         });
       }).write(";").newLine();
     }
-    Deno.writeTextFileSync(outputFilePath, writer.toString());
-    Deno.writeTextFileSync(path.join(outputDir, "index.html"), `<!DOCTYPE html><html><body><script type="module" src="./website.js"></script></body></html>`);
+    outputFilePath.writeTextSync(writer.toString());
+    outputDir.join("index.html").writeTextSync(
+      `<!DOCTYPE html><html><body><script type="module" src="./website.js"></script></body></html>`,
+    );
     await esbuild.build({
       plugins: [...denoPlugins()],
-      entryPoints: [path.toFileUrl(outputFilePath).toString()],
-      outfile: path.join(outputDir, "website.js"),
+      entryPoints: [outputFilePath.toFileUrl().toString()],
+      outfile: outputDir.join("website.js").toString(),
       bundle: true,
       format: "esm",
     });
@@ -262,13 +296,24 @@ export class Context<
 
   async *collectBenchResults(): AsyncIterable<{
     name: string;
-    dirPath: string;
-    template: BenchTemplate<BenchDefinition<string>, BaseBenchScenario, unknown, unknown>;
-    results: ReportDataScennarioResult<ExtractScenario<TTemplate>, ExtractResult<TTemplate>>[];
+    dirPath: Path;
+    template: BenchTemplate<
+      BenchDefinition<string>,
+      BaseBenchScenario,
+      unknown,
+      unknown
+    >;
+    results: ReportDataScennarioResult<
+      ExtractScenario<TTemplate>,
+      ExtractResult<TTemplate>
+    >[];
   }> {
     for await (const scenarioGroup of this.#collectScenarioGroups()) {
       const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
-      const results: ReportDataScennarioResult<ExtractScenario<TTemplate>, ExtractResult<TTemplate>>[] = [];
+      const results: ReportDataScennarioResult<
+        ExtractScenario<TTemplate>,
+        ExtractResult<TTemplate>
+      >[] = [];
       for (const scenario of scenarioGroup.scenarios) {
         const result = resultStore.get(scenario.key);
         if (result != null) {
@@ -299,14 +344,14 @@ export class Context<
         );
       }
       const scenarios = await template.collectScenarios(definition.definition);
-      const testDirPath = path.dirname(definition.filePath);
-      const relativeTestDirPath = path.relative(this.#root, testDirPath);
+      const testDirPath = definition.filePath.parentOrThrow();
+      const relativeTestDirPath = this.#root.relative(testDirPath);
       yield {
         name: relativeTestDirPath.replace(/[\\\/]/g, "::"),
         dirPath: testDirPath,
         ...definition,
         template,
-        resultsDirPath: path.join(testDirPath, "__results__"),
+        resultsDirPath: testDirPath.join("__results__"),
         scenarios,
       };
     }
@@ -315,30 +360,32 @@ export class Context<
   async #discoverBenchFiles() {
     for (
       const benchPath of discoverFilesInDirs(
-        path.join(this.#root, "benches"),
+        this.#root.join("benches"),
         "__bench__.ts",
       )
     ) {
-      await import(path.toFileUrl(benchPath).toString());
+      await import(benchPath.toFileUrl().toString());
     }
-    this.#definitions.sort((a, b) => a.filePath.localeCompare(b.filePath));
+    this.#definitions.sort((a, b) =>
+      a.filePath.toString().localeCompare(b.filePath.toString())
+    );
   }
 }
 
-function* discoverFilesInDirs(root: string, fileName: string) {
+function* discoverFilesInDirs(root: Path, fileName: string) {
   const pendingDirs = [root];
   while (pendingDirs.length > 0) {
     const dir = pendingDirs.pop()!;
-    const childEntries = Deno.readDirSync(dir);
+    const childEntries = dir.readDirSync();
     const currentPendingDirs = [];
     let found = false;
     let hadChildEntry = false;
     for (const entry of childEntries) {
       hadChildEntry = true;
       if (entry.isDirectory) {
-        currentPendingDirs.push(`${dir}/${entry.name}`);
+        currentPendingDirs.push(dir.join(entry.name));
       } else if (entry.isFile && entry.name === fileName) {
-        yield `${dir}/${entry.name}`;
+        yield dir.join(entry.name);
         found = true;
         break;
       }

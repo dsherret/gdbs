@@ -1,4 +1,5 @@
 import { fromFileUrl } from "@std/path/from-file-url";
+import { Path } from "@david/path";
 
 export function getCallerFromError(error: Error) {
   const stack = error.stack;
@@ -15,5 +16,5 @@ export function getFileNameFromErrorStack(stack: string) {
       "Couldn't determine the caller. Ensure you're running this code in Deno.",
     );
   }
-  return fromFileUrl(caller);
+  return new Path(fromFileUrl(caller));
 }

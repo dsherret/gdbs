@@ -6,7 +6,7 @@ Deno.test("getFileNameFromErrorStack", () => {
     assertEquals(
       getFileNameFromErrorStack(`Error
   at Context.defineBench (file:///V:/gdbs/cli/mod.ts:52:17)
-  at file:///V:/test/__bench__.ts:3:9`),
+  at file:///V:/test/__bench__.ts:3:9`).toString(),
       "V:\\test\\__bench__.ts",
     );
   }

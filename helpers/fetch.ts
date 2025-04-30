@@ -1,27 +1,20 @@
-import {join as joinPath} from "@std/path/join";
 import { withRetries } from "./_retries.ts";
+import type { Path } from "@david/path";
 
 export async function fetchUrlWithCache(opts: {
-  url: string,
-  folder: string,
-  tempFileSuffix?: string,
+  url: string;
+  folder: Path;
+  tempFileSuffix?: string;
 }) {
   const fileName = await hash(opts.url) + (opts.tempFileSuffix ?? "");
-  const filePath = joinPath(opts.folder, fileName);
-  try {
-    if(Deno.statSync(filePath).isFile) {
-      return filePath;
-    }
-  } catch (err) {
-    if (err instanceof Deno.errors.NotFound) {
-      // continue
-    } else {
-      throw err;
-    }
+  const filePath = opts.folder.join(fileName);
+
+  if (filePath.statSync()?.isFile) {
+    return filePath;
   }
 
-  Deno.mkdirSync(opts.folder, { recursive: true });
-  const tempFilePath = filePath + ".tmp";
+  opts.folder.mkdirSync({ recursive: true });
+  const tempFilePath = filePath.withExtname(".tmp");
   await withRetries(async () => {
     const response = await fetch(opts.url);
     if (!response.ok) {
@@ -29,20 +22,23 @@ export async function fetchUrlWithCache(opts: {
     }
 
     {
-      using file = Deno.openSync(tempFilePath, { write: true, create: true });
+      using file = tempFilePath.openSync({ write: true, create: true });
       await response.body!.pipeTo(file.writable);
     }
   });
-  Deno.renameSync(tempFilePath, filePath);
+  tempFilePath.renameSync(filePath);
   return filePath;
 }
 
 async function hash(url: string) {
   const bytes = new TextEncoder().encode(url);
-  const buffer = await crypto.subtle.digest('SHA-256', bytes)
+  const buffer = await crypto.subtle.digest("SHA-256", bytes);
   return hex(new Uint8Array(buffer));
 }
 
 function hex(bytes: Uint8Array) {
-  return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+  return bytes.reduce(
+    (str, byte) => str + byte.toString(16).padStart(2, "0"),
+    "",
+  );
 }

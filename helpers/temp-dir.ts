@@ -1,37 +1,35 @@
-import * as path from "@std/path";
+import { createTempDirSync, type TempDir as InnerTempDir } from "@david/temp";
+import type { Path } from "@david/path";
 
 export class TempDir implements Disposable {
-  #path: string;
+  #inner: InnerTempDir;
 
   constructor(opts?: Deno.MakeTempOptions) {
-    this.#path = Deno.makeTempDirSync(opts);
+    this.#inner = createTempDirSync(opts);
   }
 
-  static fromBenchDir(existingDir: string) {
+  static fromBenchDir(existingDir: Path) {
     function copyDirSync(
-      from: string,
-      to: string,
+      from: Path,
+      to: Path,
       ignoredEntries: string[],
     ) {
-      for (const entry of Deno.readDirSync(from)) {
+      for (const entry of from.readDirSync()) {
         if (ignoredEntries.includes(entry.name)) {
           continue;
         }
         if (entry.isDirectory) {
-          const toDir = path.join(to, entry.name);
-          Deno.mkdirSync(toDir);
+          const toDir = to.join(entry.name);
+          toDir.mkdirSync();
           copyDirSync(
-            path.join(from, entry.name),
+            from.join(entry.name),
             toDir,
             [],
           );
         } else if (entry.isFile) {
-          Deno.copyFileSync(
-            path.join(from, entry.name),
-            path.join(to, entry.name),
-          );
+          from.join(entry.name).copyFileSync(to.join(entry.name));
         } else if (entry.isSymlink) {
-          console.warn("Ignoring symlink at", path.join(from, entry.name));
+          console.warn("Ignoring symlink at", from.join(entry.name));
         }
       }
     }
@@ -46,22 +44,25 @@ export class TempDir implements Disposable {
   }
 
   get path() {
-    return this.#path;
+    return this.#inner.path;
   }
 
   cleanup() {
     try {
-      Deno.removeSync(this.#path, {
-        recursive: true,
-      });
+      this.path.removeSync({ recursive: true });
     } catch (err) {
       if (!(err instanceof Deno.errors.NotFound)) {
-        console.warn("Failed cleaning up temp dir", this.#path, '- Error:', err);
+        console.warn(
+          "Failed cleaning up temp dir",
+          this.path,
+          "- Error:",
+          err,
+        );
       }
     }
   }
 
   [Symbol.dispose]() {
-    this.cleanup();
+    this.#inner[Symbol.dispose]();
   }
 }

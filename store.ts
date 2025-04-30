@@ -1,9 +1,9 @@
-import * as path from "@std/path";
+import type { Path } from "@david/path";
 
 export class ResultStore {
-  readonly #dirPath: string;
+  readonly #dirPath: Path;
 
-  constructor(dirPath: string) {
+  constructor(dirPath: Path) {
     this.#dirPath = dirPath;
   }
 
@@ -16,7 +16,7 @@ export class ResultStore {
       this.#writeText(key, text);
     } catch (err) {
       if (err instanceof Deno.errors.NotFound) {
-        Deno.mkdirSync(path.dirname(this.#getFilePath(key)), { recursive: true });
+        this.#getFilePath(key).parentOrThrow().mkdirSync({ recursive: true });
         this.#writeText(key, text);
       } else {
         throw err;
@@ -25,7 +25,7 @@ export class ResultStore {
   }
 
   #writeText(key: string, text: string) {
-    Deno.writeTextFileSync(this.#getFilePath(key), text);
+    this.#getFilePath(key).writeTextSync(text);
   }
 
   get(key: string) {
@@ -42,17 +42,10 @@ export class ResultStore {
   }
 
   #getFileText(key: string) {
-    try {
-      return Deno.readTextFileSync(this.#getFilePath(key));
-    } catch (e) {
-      if (e instanceof Deno.errors.NotFound) {
-        return undefined;
-      }
-      throw e;
-    }
+    return this.#getFilePath(key).readMaybeTextSync();
   }
 
   #getFilePath(key: string) {
-    return path.join(this.#dirPath, key) + ".json";
+    return this.#dirPath.join(key + ".json");
   }
 }
