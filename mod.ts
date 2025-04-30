@@ -196,9 +196,10 @@ export class Context<
       })
     }
 
+    Deno.writeTextFileSync(path.join(outputDir, "benches.json"), JSON.stringify(benches));
+
     const outputFilePath = path.join(outputDir, "website.ts");
     const writer = new CodeBlockWriter();
-    Deno.writeTextFileSync(path.join(outputDir, "benches.json"), JSON.stringify(benches));
     writer.writeLine(`import benches from "./benches.json" with { type: "json" };`);
     for (const [name, template] of Object.entries(this.templates)) {
       writer.writeLine(`import template_${name} from "${path.relative(outputDir, template.frontendFilePath).replaceAll("\\", "/")}";`);
