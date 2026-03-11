@@ -45,6 +45,22 @@ export class ResultStore {
     return this.#getFilePath(key).readMaybeTextSync();
   }
 
+  delete(key: string) {
+    const filePath = this.#getFilePath(key);
+    filePath.removeSync();
+    // clean up empty parent directories up to the results dir
+    let parent = filePath.parentOrThrow();
+    while (!parent.equals(this.#dirPath)) {
+      const entries = [...parent.readDirSync()];
+      if (entries.length === 0) {
+        parent.removeSync();
+        parent = parent.parentOrThrow();
+      } else {
+        break;
+      }
+    }
+  }
+
   #getFilePath(key: string) {
     return this.#dirPath.join(key + ".json");
   }

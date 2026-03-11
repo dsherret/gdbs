@@ -139,6 +139,37 @@ export class Context<
     }
   }
 
+  async deleteResults(
+    filter: (info: {
+      scenario: BaseBenchScenario;
+      template: BenchTemplate<
+        BenchDefinition<string>,
+        BaseBenchScenario,
+        unknown,
+        unknown
+      >;
+    }) => boolean | Promise<boolean>,
+  ) {
+    for await (const scenarioGroup of this.#collectScenarioGroups()) {
+      const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
+      for (const scenario of scenarioGroup.scenarios) {
+        if (
+          (await filter({ scenario, template: scenarioGroup.template })) &&
+          resultStore.get(scenario.key) != null
+        ) {
+          console.error(`Deleting ${scenarioGroup.name} ${scenario.key}`);
+          resultStore.delete(scenario.key);
+        }
+      }
+    }
+  }
+
+  async deleteResultsForSystem() {
+    await this.deleteResults(async ({ scenario, template }) => {
+      return (await template.systemSupportsScenario?.(scenario)) ?? true;
+    });
+  }
+
   async buildFrontend(opts: {
     outputDir: Path;
     dev: boolean;
