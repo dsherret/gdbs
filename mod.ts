@@ -154,8 +154,8 @@ export class Context<
       const resultStore = new ResultStore(scenarioGroup.resultsDirPath);
       for (const scenario of scenarioGroup.scenarios) {
         if (
-          (await filter({ scenario, template: scenarioGroup.template })) &&
-          resultStore.get(scenario.key) != null
+          (await filter({ scenario, template: scenarioGroup.template }))
+          && resultStore.get(scenario.key) != null
         ) {
           console.error(`Deleting ${scenarioGroup.name} ${scenario.key}`);
           resultStore.delete(scenario.key);
@@ -271,7 +271,9 @@ export class Context<
       writer.writeLine(`const title = document.createElement("h2");`);
       writer.writeLine(`title.textContent = bench.name;`);
       writer.writeLine(`div.appendChild(title)`);
-      writer.writeLine(`const templateName = bench.templateName as keyof typeof templates;`);
+      writer.writeLine(
+        `const templateName = bench.templateName as keyof typeof templates;`,
+      );
       writer.writeLine(`const template = templates[templateName];`);
       writer.writeLine(
         `fetch("./data" + i + ".json").then(res => res.json()).then(data => `,

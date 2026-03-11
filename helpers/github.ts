@@ -50,7 +50,9 @@ export interface FetchGitHubReleasesOptions {
   authToken?: string;
 }
 
-export async function* fetchGitHubReleases(opts: FetchGitHubReleasesOptions): AsyncGenerator<GitHubRelease> {
+export async function* fetchGitHubReleases(
+  opts: FetchGitHubReleasesOptions,
+): AsyncGenerator<GitHubRelease> {
   const initialUrl =
     `https://api.github.com/repos/${opts.owner}/${opts.repo}/releases`;
   let pageNumber = 1;
